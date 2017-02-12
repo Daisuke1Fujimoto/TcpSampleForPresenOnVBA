@@ -20,12 +20,12 @@ Dim commandStr(10), k
 Dim commandFileName
 Dim pptFileName
 
-'ipAddess        = "172.16.168.71"
-'portNo          = 5001
-ipAddess        = "127.0.0.1"
-portNo          = 4000
-commandFileName = "presenTxt.txt"
-pptFileName     = "Sample.pptx"
+ipAddess        = "172.16.168.36"
+portNo          = 5001
+'ipAddess        = "127.0.0.1"
+'portNo          = 4000
+commandFileName = "genko.txt"
+pptFileName     = "LINCREA.pptx"
 
 
 '----------
@@ -46,20 +46,32 @@ Call readCommandFile(getCurPath & "\" & commandFileName)
 'コマンド用文字列を送信するループ
 Do While True
 	Call startConnection
-	Call transData
+	If transData = false Then
+		Exit Do
+	End If
 Loop
 
+
+'----------
+' 終了処理
+'----------
+Set oApp = Nothing
+Set Winsock1 = Nothing
+
 WSCript.Quit
+
+
 
 '===========================================================
 'メイン処理
 '===========================================================
-Sub transData()
+Function transData()
 	
 	Dim wText
 	Dim encodeSendStr
 	Dim splitAryStr
-	Dim wSendStr
+	Dim pageNo
+	Dim waitTime
 	
 	WScript.Echo "---transData-----"
 	'----------
@@ -74,18 +86,23 @@ Sub transData()
 	encodeSendStr = encodeStr(wText & vbLf, "UTF-8")
 	
 	'コマンド用文字列をカンマで分割する
-	'splitAryStr = Split(encodeSendStr, ",")
+	splitAryStr = Split(wText, ",", -1)
 	
-	'wSendStr = splitAryStr(1) & "," & splitAryStr(2)
-	'WScript.Echo "SendStr(" & i & "):" & wSendStr
-	
+	If splitAryStr(0) <> "End" Then
+		pageNo = splitAryStr(0)
+		WScript.Echo "pageNo:" & pageNo
+		waitTime = splitAryStr(3)
+		WScript.Echo "waitTime:" & waitTime
+	Else
+		'処理終了(End)の場合、PPTの最終ページを表示
+		pageNo = "999"
+	End If
+
 	'----------
     ' PPTのページ操作
     '----------
-    If i <> 0 Then
-    	oApp.SlideShowWindows(1).View.Next 'ページ送り
-    End If
-	
+    Call goToPptSlideNo(Int(pageNo), oApp)
+
 	'サーバ側へコマンド用文字列を送信
 	Winsock1.SEndData encodeSendStr
 
@@ -116,14 +133,19 @@ Sub transData()
 	'１伝文の送受信を確認したら切断（TCP/IP通信の制約）
 	Call disConnection()
 	
-	'終了コマンドが設定されていたら、プログラム終了
-	IF wText = "End" THEN
-		Call disConnection()
-		oApp.ActivePresentation.Application.Quit 'PPTの終了
+	If splitAryStr(0) = "End" Then
+		'終了コマンドが設定されていたら、プログラム終了
 		WSCript.Quit
-	End IF
+		transData = false
+		Exit Function
+	End If
 	
-End Sub
+	'説明が終了するまでWaitする
+	WScript.Sleep(waitTime)
+
+	transData = true
+	
+End Function
 
 '===========================================================
 ' TCP通信開始
@@ -250,3 +272,31 @@ Function getCurPath()
 	getCurPath = wFileObj.GetParentFolderName(WScript.ScriptFullName)
 	
 End Function
+
+'===========================================================
+' PPTファイルの指定スライド番号に遷移する
+'===========================================================
+Sub goToPptSlideNo(ByVal pNo, ByRef pPptObj)
+	Dim wMaxPageNo
+	
+	wMaxPageNo = pPptObj.ActivePresentation.Slides.Count
+	
+	'有効なページ数でない場合は、最終ページを表示
+	If Not(IsNumeric(pNo)) Then
+		pNo = wMaxPageNo
+	End If
+
+	'最大ページ数を超えた数の場合は、最終ページを表示
+	If pNo > wMaxPageNo Then
+		pNo = wMaxPageNo
+	End If
+	
+	'１ページより小さい場合は、１ページ目を表示
+	If pNo < 1 Then
+		pNo = 1
+	End If
+	
+	'指定スライドへ移動
+	Call oApp.SlideShowWindows(1).View.GotoSlide(Int(pNo))
+	
+End Sub
